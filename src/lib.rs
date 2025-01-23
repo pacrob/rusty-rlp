@@ -14,11 +14,24 @@ enum ListOrBytes<'a> {
     Bytes(&'a PyBytes),
 }
 
-impl ToPyObject for ListOrBytes<'_> {
-    fn to_object(&self, py: Python) -> PyObject {
-        match *self {
-            ListOrBytes::List(ref val) => val.to_object(py),
-            ListOrBytes::Bytes(ref val) => val.to_object(py),
+// impl ToPyObject for ListOrBytes<'_> {
+//     fn to_object(&self, py: Python) -> PyObject {
+//         match *self {
+//             ListOrBytes::List(ref val) => val.to_object(py),
+//             ListOrBytes::Bytes(ref val) => val.to_object(py),
+//         }
+//     }
+// }
+// 
+impl<'a, 'py> IntoPyObject<'py> for &'a ListOrBytes<'a> {
+    type Target = PyAny;
+    type Output = Borrowed<'a, 'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self {
+            ListOrBytes::List(val) => Ok(val.to_object(py)),
+            ListOrBytes::Bytes(val) => Ok(val.to_object(py)),
         }
     }
 }
@@ -181,11 +194,11 @@ fn decode_raw(
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn rusty_rlp(_py: Python, module: &PyModule) -> PyResult<()> {
-    module.add_wrapped(wrap_pyfunction!(decode_raw))?;
-    module.add_wrapped(wrap_pyfunction!(encode_raw))?;
-    module.add("DecodingError", _py.get_type::<DecodingError>())?;
-    module.add("EncodingError", _py.get_type::<EncodingError>())?;
+fn rusty_rlp(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(decode_raw, m)?)?;
+    m.add_function(wrap_pyfunction!(encode_raw, m)?)?;
+    m.add("DecodingError", m.py().get_type::<DecodingError>())?;
+    m.add("EncodingError", m.py().get_type::<EncodingError>())?;
 
     Ok(())
 }

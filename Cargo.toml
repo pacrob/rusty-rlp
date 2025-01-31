@@ -15,7 +15,6 @@ name = "rusty_rlp"
 crate-type = ["cdylib"]
 
 [dependencies]
-
 rlp = "0.4.5"
 
 [dependencies.pyo3]

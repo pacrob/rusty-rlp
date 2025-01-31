@@ -1,6 +1,10 @@
-use pyo3::prelude::*;
+use std::ops::Deref;
+
+use pyo3::{prelude::*, IntoPyObjectExt};
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::wrap_pyfunction;
+use pyo3::{IntoPyObject, PyAny, PyErr, PyObject, Python};
+// use pyo3::conversion::Bound;
 
 use rlp::{PayloadInfo, Prototype, Rlp};
 
@@ -9,11 +13,17 @@ mod errors;
 use crate::errors::{DecodingError, EncodingError, RlpDecoderError};
 
 // We use this to abstract between both types to not have to rely on calling to_object(py) to achieve that.
-enum ListOrBytes<'a> {
-    List(&'a PyList),
-    Bytes(&'a PyBytes),
-}
+// enum ListOrBytes<'a> {
+//     List(&'a PyList),
+//     Bytes(&'a PyBytes),
+// }
 
+enum ListOrBytes {
+    List(Py<PyList>),
+    Bytes(Py<PyBytes>),
+}
+//
+// original
 // impl ToPyObject for ListOrBytes<'_> {
 //     fn to_object(&self, py: Python) -> PyObject {
 //         match *self {
@@ -22,16 +32,34 @@ enum ListOrBytes<'a> {
 //         }
 //     }
 // }
+//
+
+// my version
+// impl<'a, 'py> IntoPyObject<'py> for &'a ListOrBytes<'a> {
+//     type Target = PyAny;
+//     type Output = Bound<'py, Self::Target>;
+//     type Error = PyErr;
+
+//     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+//         match self {
+//             ListOrBytes::List(py_list) => Ok(Bound::from((*py_list).into_py(py))),
+//             ListOrBytes::Bytes(py_bytes) => Ok(Bound::from(py_bytes.into_py(py))),
+//         }
+//     }
+// }
 // 
-impl<'a, 'py> IntoPyObject<'py> for &'a ListOrBytes<'a> {
+// Directly use Either for the sum type
+// type ListOrBytes<'a> = Either<&'a PyList, &'a PyBytes>;
+
+impl<'py> IntoPyObject<'py> for ListOrBytes{
     type Target = PyAny;
-    type Output = Borrowed<'a, 'py, Self::Target>;
+    type Output = Bound<'py, Self::Target>;
     type Error = std::convert::Infallible;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self {
-            ListOrBytes::List(val) => Ok(val.to_object(py)),
-            ListOrBytes::Bytes(val) => Ok(val.to_object(py)),
+            ListOrBytes::List(val) => Ok(val.bind(py).as_any().clone()),
+            ListOrBytes::Bytes(val) => Ok(val.bind(py).as_any().clone()),
         }
     }
 }
@@ -171,7 +199,7 @@ fn _encode_raw<'a>(
 fn encode_raw(val: PyObject, py: pyo3::Python) -> PyResult<PyObject> {
     let mut rlp_stream = rlp::RlpStream::new();
     match _encode_raw(&mut rlp_stream, &val.cast_as(py).unwrap(), py) {
-        Ok(_) => Ok(PyBytes::new(py, &rlp_stream.out()).to_object(py)),
+        Ok(_) => Ok(PyBytes::new(py, &rlp_stream.out()).into_pyobject(py)),
         Err(e) => Err(e),
     }
 }
@@ -185,8 +213,8 @@ fn decode_raw(
 ) -> PyResult<PyObject> {
     _decode_raw(strict, preserve_cache_info, rlp::Rlp::new(&rlp_val), py).map(|result| {
         match result {
-            (decoded, None) => (decoded, PyList::empty(py).to_object(py)),
-            (decoded, Some(val)) => (decoded, val.to_object(py)),
+            (decoded, None) => (decoded, PyList::empty(py).into_pyobject(py)),
+            (decoded, Some(val)) => (decoded, val.into_pyobject(py)),
         }
         .to_object(py)
     })
